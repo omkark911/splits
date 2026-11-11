@@ -686,7 +686,7 @@ export default function SmartReceiptSplitter() {
                               )}
                             </span>
                             <span className="truncate max-w-[100px]">
-                              {person.split(" ")[0]}
+                              {person}
                             </span>
                             {isActive && exactShare !== null && (
                               <span className="ml-2 pl-2 border-l border-current opacity-80 text-xs font-bold">
