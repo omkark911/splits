@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef, useEffect } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import {
   UploadCloud,
   FileText,
@@ -10,10 +10,12 @@ import {
   ChevronRight,
   CheckCheck,
   Receipt,
-  Euro,
-  DollarSign,
-  PoundSterling,
   Copy,
+  Key,
+  HelpCircle,
+  Trash2,
+  Save,
+  Info,
 } from "lucide-react";
 
 const CURRENCIES = [
@@ -33,6 +35,14 @@ const COLORS = [
 ];
 
 export default function SmartReceiptSplitter() {
+  // --- API Key Management State ---
+  const [apiKey, setApiKey] = useState(
+    () => localStorage.getItem("gemini_api_key") || "",
+  );
+  const [tempKey, setTempKey] = useState("");
+  const [showHelp, setShowHelp] = useState(false);
+
+  // --- App Flow State ---
   const [phase, setPhase] = useState("input"); // 'input', 'processing', 'split'
   const [error, setError] = useState(null);
 
@@ -46,7 +56,7 @@ export default function SmartReceiptSplitter() {
 
   // --- Phase 3: Split State ---
   const [items, setItems] = useState([]);
-  const [assignments, setAssignments] = useState({}); // { itemId: [participantNames] }
+  const [assignments, setAssignments] = useState({});
   const [copied, setCopied] = useState(false);
 
   const activeCurrency =
@@ -60,7 +70,25 @@ export default function SmartReceiptSplitter() {
     [participantsStr],
   );
 
-  // Helper to convert file to base64
+  // --- API Key Handlers ---
+  const handleSaveKey = () => {
+    if (tempKey.trim()) {
+      localStorage.setItem("gemini_api_key", tempKey.trim());
+      setApiKey(tempKey.trim());
+      setTempKey("");
+    }
+  };
+
+  const handleDeleteKey = () => {
+    if (window.confirm("Are you sure you want to delete your saved API Key?")) {
+      localStorage.removeItem("gemini_api_key");
+      setApiKey("");
+      setPhase("input");
+      setItems([]);
+    }
+  };
+
+  // --- File Handling ---
   const toBase64 = (file) =>
     new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -82,7 +110,12 @@ export default function SmartReceiptSplitter() {
     }
   };
 
+  // --- Processing ---
   const startProcessing = async () => {
+    if (!apiKey) {
+      setError("Missing API Key. Please add it in settings.");
+      return;
+    }
     if (inputType === "image" && !inputFile) {
       setError("Please upload an image or PDF of the receipt.");
       return;
@@ -147,7 +180,6 @@ export default function SmartReceiptSplitter() {
         },
       };
 
-      const apiKey = ""; // Canvas will automatically inject the key
       const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${apiKey}`;
 
       const response = await fetch(apiUrl, {
@@ -167,7 +199,6 @@ export default function SmartReceiptSplitter() {
 
       const parsedItems = JSON.parse(jsonText);
 
-      // Assign IDs to items and set initial assignments
       const formattedItems = parsedItems.map((item, index) => ({
         id: `item-${index}`,
         ...item,
@@ -192,7 +223,6 @@ export default function SmartReceiptSplitter() {
   };
 
   // --- Splitting Math Logic ---
-  // Calculates EXACT cent distribution ensuring sum equals item price
   const exactShares = useMemo(() => {
     const sharesByItem = {};
     const totalsByPerson = {};
@@ -211,7 +241,6 @@ export default function SmartReceiptSplitter() {
 
         assignedTo.forEach((person, index) => {
           let shareCents = baseShareCents;
-          // Distribute remainder 1 cent at a time
           if (index < Math.abs(remainderCents)) {
             shareCents += Math.sign(remainderCents);
           }
@@ -246,7 +275,7 @@ export default function SmartReceiptSplitter() {
     setAssignments((prev) => {
       const current = prev[itemId] || [];
       if (current.length === participants.length) {
-        return { ...prev, [itemId]: [] }; // Deselect all if already all selected
+        return { ...prev, [itemId]: [] };
       }
       return { ...prev, [itemId]: [...participants] };
     });
@@ -255,12 +284,9 @@ export default function SmartReceiptSplitter() {
   const getPersonColorClass = (person, isActive) => {
     const index = participants.indexOf(person);
     const colorClassString = COLORS[index % COLORS.length];
-
     if (isActive) {
-      // Return the active classes (bg, border, text)
-      return colorClassString.replace("hover:", "active-state-"); // strip hover for active
+      return colorClassString.replace("hover:", "active-state-");
     }
-    // Return inactive state (grayed out)
     return "bg-white border-gray-300 text-gray-500 hover:bg-gray-50";
   };
 
@@ -287,7 +313,80 @@ export default function SmartReceiptSplitter() {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  // --- Rendering ---
+  // ================= RENDER =================
+
+  // Render API Setup Screen if no key exists
+  if (!apiKey) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4 font-sans text-gray-900">
+        <div className="max-w-md w-full bg-white p-8 rounded-2xl shadow-sm border border-gray-200 animate-in fade-in slide-in-from-bottom-4 duration-500">
+          <div className="flex justify-center mb-6">
+            <div className="w-16 h-16 bg-indigo-100 text-indigo-600 rounded-full flex items-center justify-center">
+              <Key className="w-8 h-8" />
+            </div>
+          </div>
+          <h1 className="text-2xl font-bold text-center mb-2">Setup API Key</h1>
+          <p className="text-gray-500 text-center mb-8 text-sm">
+            To use the AI receipt processing, please provide a Gemini API Key.
+            It will be stored securely in your browser.
+          </p>
+
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Gemini API Key
+              </label>
+              <input
+                type="password"
+                className="w-full pl-3 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500"
+                placeholder="AIzaSy..."
+                value={tempKey}
+                onChange={(e) => setTempKey(e.target.value)}
+              />
+            </div>
+
+            <button
+              onClick={handleSaveKey}
+              disabled={!tempKey.trim()}
+              className="w-full flex items-center justify-center py-2.5 px-4 rounded-xl text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 transition-colors shadow-sm font-medium gap-2"
+            >
+              <Save className="w-4 h-4" /> Save Key
+            </button>
+          </div>
+
+          <div className="mt-6 pt-6 border-t border-gray-100">
+            <button
+              onClick={() => setShowHelp(!showHelp)}
+              className="w-full flex items-center justify-center gap-2 text-sm text-gray-500 hover:text-gray-900 transition-colors"
+            >
+              <HelpCircle className="w-4 h-4" /> Need help getting a key?
+            </button>
+
+            {showHelp && (
+              <div className="mt-4 p-4 bg-blue-50 border border-blue-100 rounded-xl text-sm text-blue-800 flex gap-3 animate-in slide-in-from-top-2">
+                <Info className="w-5 h-5 shrink-0 text-blue-500 mt-0.5" />
+                <p>
+                  Go to <strong>Google AI Studio</strong> (
+                  <a
+                    href="https://aistudio.google.com"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="underline font-semibold hover:text-blue-900"
+                  >
+                    aistudio.google.com
+                  </a>
+                  ), sign in, click 'Create API key', copy it, and paste it
+                  here.
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Render Main App
   return (
     <div className="min-h-screen bg-gray-50 font-sans text-gray-900 pb-48">
       {/* HEADER */}
@@ -295,19 +394,33 @@ export default function SmartReceiptSplitter() {
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2 text-indigo-600">
             <Receipt className="w-6 h-6" />
-            <span className="font-bold text-lg tracking-tight">SmartSplit</span>
+            <span className="font-bold text-lg tracking-tight hidden sm:block">
+              SmartSplit
+            </span>
           </div>
-          {phase === "split" && (
+
+          <div className="flex items-center gap-4">
+            {phase === "split" && (
+              <button
+                onClick={() => {
+                  setPhase("input");
+                  setItems([]);
+                }}
+                className="text-sm font-medium text-gray-500 hover:text-gray-900 flex items-center gap-1 transition-colors bg-gray-100 hover:bg-gray-200 px-3 py-1.5 rounded-lg"
+              >
+                <RefreshCw className="w-4 h-4" />{" "}
+                <span className="hidden sm:inline">Start Over</span>
+              </button>
+            )}
             <button
-              onClick={() => {
-                setPhase("input");
-                setItems([]);
-              }}
-              className="text-sm font-medium text-gray-500 hover:text-gray-900 flex items-center gap-1 transition-colors"
+              onClick={handleDeleteKey}
+              className="text-sm font-medium text-red-500 hover:text-red-700 flex items-center gap-1 transition-colors px-3 py-1.5 rounded-lg border border-red-100 hover:bg-red-50"
+              title="Delete Saved API Key"
             >
-              <RefreshCw className="w-4 h-4" /> Start Over
+              <Trash2 className="w-4 h-4" />{" "}
+              <span className="hidden sm:inline">Remove Key</span>
             </button>
-          )}
+          </div>
         </div>
       </header>
 
@@ -333,7 +446,6 @@ export default function SmartReceiptSplitter() {
             )}
 
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200 space-y-6">
-              {/* Input Type Tabs */}
               <div className="flex p-1 bg-gray-100 rounded-lg">
                 <button
                   onClick={() => setInputType("image")}
@@ -349,7 +461,6 @@ export default function SmartReceiptSplitter() {
                 </button>
               </div>
 
-              {/* Input Area */}
               <div className="pt-2">
                 {inputType === "image" ? (
                   <div className="space-y-4">
@@ -394,7 +505,6 @@ export default function SmartReceiptSplitter() {
                 )}
               </div>
 
-              {/* Settings */}
               <div className="space-y-4 pt-4 border-t border-gray-100">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -599,7 +709,6 @@ export default function SmartReceiptSplitter() {
               )}
             </div>
 
-            {/* SUMMARY EXPORT SECTION */}
             {items.length > 0 && (
               <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden mt-8">
                 <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50">
@@ -630,7 +739,7 @@ export default function SmartReceiptSplitter() {
         )}
       </main>
 
-      {/* ================= STICKY FOOTER (SPLIT PHASE ONLY) ================= */}
+      {/* ================= STICKY FOOTER ================= */}
       {phase === "split" && (
         <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 shadow-[0_-15px_40px_-15px_rgba(0,0,0,0.1)] z-50 animate-in slide-in-from-bottom-full duration-500">
           <div className="max-w-4xl mx-auto p-4 sm:px-6 lg:px-8">
@@ -658,7 +767,6 @@ export default function SmartReceiptSplitter() {
               {participants.map((person, index) => {
                 const total = exactShares.totalsByPerson[person] || 0;
                 const colorStr = COLORS[index % COLORS.length];
-                // Extract primary color name from the tailwind class string for styling
                 const colorName = colorStr.split("-")[1];
 
                 return (
